@@ -7,6 +7,8 @@
 using GHelper.Helpers;
 using System.Management;
 using System.Net;
+using System.Windows.Forms;
+using GHelper.Security;
 
 namespace Ryzen
 {
@@ -202,6 +204,14 @@ namespace Ryzen
                     Logger.WriteLine(ex.Message);
                     Logger.WriteLine(ex.ToString());
                     if (!ProcessHelper.IsUserAdministrator() && !ex.Message.Contains("remote server")) ProcessHelper.RunAsAdmin("uv");
+                    return;
+                }
+
+                if (!PluginVerifier.Verify(zipLocation))
+                {
+                    Logger.WriteLine("Plugin ZIP verification failed");
+                    MessageBox.Show("Downloaded plugin failed verification and will not be installed.", "Security warning");
+                    try { File.Delete(zipLocation); } catch { }
                     return;
                 }
 
