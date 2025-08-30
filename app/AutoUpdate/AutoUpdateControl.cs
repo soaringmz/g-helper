@@ -1,7 +1,9 @@
 ﻿using GHelper.Helpers;
+using System;
 using System.Diagnostics;
-using System.Net;
+using System.Net.Http;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -12,7 +14,7 @@ namespace GHelper.AutoUpdate
 
         SettingsForm settings;
 
-        public string versionUrl = "http://github.com/seerge/g-helper/releases";
+        public string versionUrl = "https://github.com/seerge/g-helper/releases";
         static long lastUpdate;
 
         public AutoUpdateControl(SettingsForm settingsForm)
@@ -64,11 +66,15 @@ namespace GHelper.AutoUpdate
                     var assets = config.GetProperty("assets");
 
                     string url = null;
+                    string hashUrl = null;
 
                     for (int i = 0; i < assets.GetArrayLength(); i++)
                     {
-                        if (assets[i].GetProperty("browser_download_url").ToString().Contains(".zip"))
-                            url = assets[i].GetProperty("browser_download_url").ToString();
+                        var downloadUrl = assets[i].GetProperty("browser_download_url").ToString();
+                        if (downloadUrl.Contains(".zip"))
+                            url = downloadUrl;
+                        if (downloadUrl.Contains(".sha256"))
+                            hashUrl = downloadUrl;
                     }
 
                     if (url is null)
@@ -86,7 +92,8 @@ namespace GHelper.AutoUpdate
                         string[] args = Environment.GetCommandLineArgs();
                         if (args.Length > 1 && args[1] == "autoupdate")
                         {
-                            AutoUpdate(url);
+                            if (hashUrl != null)
+                                await AutoUpdate(url, hashUrl);
                             return;
                         }
 
@@ -94,7 +101,10 @@ namespace GHelper.AutoUpdate
                         {
                             DialogResult dialogResult = MessageBox.Show(Properties.Strings.DownloadUpdate + ": G-Helper " + tag + "?", "Update", MessageBoxButtons.YesNo);
                             if (dialogResult == DialogResult.Yes)
-                                AutoUpdate(url);
+                            {
+                                if (hashUrl != null)
+                                    await AutoUpdate(url, hashUrl);
+                            }
                             else
                                 AppConfig.Set("skip_version", tag);
                         }
@@ -119,28 +129,41 @@ namespace GHelper.AutoUpdate
             return Regex.Replace(Regex.Replace(input, @"\[|\]", "`$0"), @"\'", "''");
         }
 
-        async void AutoUpdate(string requestUri)
+        public static async Task<bool> AutoUpdate(string requestUri, string hashUri, HttpClient? httpClient = null)
         {
-
             Uri uri = new Uri(requestUri);
+            Uri hash = new Uri(hashUri);
+
+            if (uri.Scheme != Uri.UriSchemeHttps || hash.Scheme != Uri.UriSchemeHttps)
+            {
+                Logger.WriteLine("Update aborted: non-HTTPS URL provided.");
+                return false;
+            }
+
             string zipName = Path.GetFileName(uri.LocalPath);
 
             string exeLocation = Application.ExecutablePath;
             string exeDir = Path.GetDirectoryName(exeLocation);
-            //exeDir = "C:\\Program Files\\GHelper";
             string exeName = Path.GetFileName(exeLocation);
-            string zipLocation = exeDir + "\\" + zipName;
+            string zipLocation = Path.Combine(exeDir!, zipName);
 
-            using (WebClient client = new WebClient())
+            try
             {
-                try
+                using (var client = httpClient ?? new HttpClient())
                 {
-                    client.DownloadFile(uri, zipLocation);
-                }
-                catch (Exception ex)
-                {
-                    Logger.WriteLine(ex.Message);
-                    ProcessHelper.RunAsAdmin("autoupdate");
+                    var data = await client.GetByteArrayAsync(uri);
+                    await File.WriteAllBytesAsync(zipLocation, data);
+
+                    var expectedHash = (await client.GetStringAsync(hash)).Trim();
+
+                    if (!VerifyFileHash(zipLocation, expectedHash))
+                    {
+                        Logger.WriteLine("Hash mismatch for downloaded update.");
+                        if (OperatingSystem.IsWindows())
+                            MessageBox.Show("Downloaded update failed integrity check and will not be installed.");
+                        File.Delete(zipLocation);
+                        return false;
+                    }
                 }
 
                 Logger.WriteLine(requestUri);
@@ -148,7 +171,8 @@ namespace GHelper.AutoUpdate
                 Logger.WriteLine(zipName);
                 Logger.WriteLine(exeName);
 
-                string command = $"$ErrorActionPreference = \"Stop\"; Set-Location -Path '{EscapeString(exeDir)}'; Wait-Process -Name \"GHelper\"; Expand-Archive \"{zipName}\" -DestinationPath . -Force; Remove-Item \"{zipName}\" -Force; \".\\{exeName}\"; ";
+                string command =
+                    $"$ErrorActionPreference = \"Stop\"; Set-Location -Path '{EscapeString(exeDir)}'; Wait-Process -Name \"GHelper\"; Expand-Archive \"{zipName}\" -DestinationPath . -Force; Remove-Item \"{zipName}\" -Force; \".\\{exeName}\"; ";
                 Logger.WriteLine(command);
 
                 try
@@ -168,8 +192,22 @@ namespace GHelper.AutoUpdate
                 }
 
                 Application.Exit();
+                return true;
             }
+            catch (Exception ex)
+            {
+                Logger.WriteLine(ex.Message);
+                return false;
+            }
+        }
 
+        public static bool VerifyFileHash(string filePath, string expectedHash)
+        {
+            using var sha256 = SHA256.Create();
+            using var stream = File.OpenRead(filePath);
+            var hashBytes = sha256.ComputeHash(stream);
+            var actualHash = BitConverter.ToString(hashBytes).Replace("-", string.Empty).ToLowerInvariant();
+            return actualHash.Equals(expectedHash.Trim().ToLowerInvariant(), StringComparison.Ordinal);
         }
 
     }
