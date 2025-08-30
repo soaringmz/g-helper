@@ -9,6 +9,9 @@
 // This is support library for WinRing0 1.3.x.
 
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.IO;
+using System.Collections.Generic;
 
 namespace Ryzen
 {
@@ -17,6 +20,12 @@ namespace Ryzen
         const string dllNameX64 = "WinRing0x64.dll";
         const string dllName = "WinRing0.dll";
 
+        private static readonly HashSet<string> AllowedHashes = new()
+        {
+            // WinRing0x64.dll SHA256
+            "a746fd5728e7485f741cc330a279674bc8590b1b8007d8614046c49f58698485",
+        };
+
         // for this support library
         public enum Status
         {
@@ -24,6 +33,7 @@ namespace Ryzen
             DLL_NOT_FOUND = 1,
             DLL_INCORRECT_VERSION = 2,
             DLL_INITIALIZE_ERROR = 3,
+            DLL_INVALID_SIGNATURE = 4,
         }
 
         // for WinRing0
@@ -95,17 +105,39 @@ namespace Ryzen
         private nint module = nint.Zero;
         private uint status = (uint)Status.NO_ERROR;
 
-        public Ols()
+        private static bool VerifyLibrary(string path)
         {
-            string fileName;
-
-            if (nint.Size == 8)
+            try
             {
-                fileName = dllNameX64;
+                using var stream = File.OpenRead(path);
+                using var sha = SHA256.Create();
+                var hash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty).ToLowerInvariant();
+                return AllowedHashes.Contains(hash);
             }
-            else
+            catch (Exception ex)
             {
-                fileName = dllName;
+                Logger.WriteLine($"Error verifying {path}: {ex.Message}");
+                return false;
+            }
+        }
+
+        public Ols(string? customLibraryPath = null)
+        {
+            string fileName = customLibraryPath ?? (nint.Size == 8 ? dllNameX64 : dllName);
+
+            if (!File.Exists(fileName))
+            {
+                status = (uint)Status.DLL_NOT_FOUND;
+                Logger.WriteLine($"WinRing0 library not found: {fileName}");
+                return;
+            }
+
+            if (!VerifyLibrary(fileName))
+            {
+                status = (uint)Status.DLL_INVALID_SIGNATURE;
+                Logger.WriteLine($"WinRing0 library failed verification: {fileName}");
+                Logger.WriteLine("Please reinstall GHelper or download a clean driver from the official GitHub release page.");
+                return;
             }
 
             module = LoadLibrary(fileName);
