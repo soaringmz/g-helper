@@ -7,6 +7,7 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="CommandWhitelistTests.cs" />
     <Compile Include="../app/Input/CommandSanitizer.cs" Link="CommandSanitizer.cs" />
   </ItemGroup>
 
