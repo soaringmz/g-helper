@@ -152,6 +152,11 @@ Huge thanks to [@IceStormNG](https://github.com/IceStormNG) 👑 for contributio
 - ``Ctrl + Shift + Alt + F20`` - Custom 2 (if exists)
 - [Custom keybindings / hotkeys](https://github.com/seerge/g-helper/wiki/Power-user-settings#custom-hotkey-actions)
 
+> [!NOTE]
+> **Custom command whitelist**
+> 
+> For safety, custom hotkey commands are limited to simple command lines made up of letters, numbers, spaces and `-_.:/\\` characters. Shell operators like `&`, `|`, `;`, `<` or `>` are blocked and will prompt for confirmation before execution.
+
 ### 🎮ROG Ally Bindings
 - ``M + DPad Left / Right`` - Display Brightness
 - ``M + DPad Up`` - Touch keyboard

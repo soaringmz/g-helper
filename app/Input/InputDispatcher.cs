@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.Management;
 using System.Text.RegularExpressions;
+using System.Windows.Forms;
 
 namespace GHelper.Input
 {
@@ -228,6 +229,11 @@ namespace GHelper.Input
             return hexValues;
         }
 
+        static bool ConfirmUnsafeCommand(string command)
+        {
+            DialogResult result = MessageBox.Show($"Run command?\n{command}", "Custom command", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            return result == DialogResult.Yes;
+        }
 
         static void CustomKey(string configKey = "m3")
         {
@@ -1208,6 +1214,9 @@ namespace GHelper.Input
         static void LaunchProcess(string command = "")
         {
             if (string.IsNullOrEmpty(command)) return;
+
+            if (!CommandSanitizer.IsCommandAllowed(command) && !ConfirmUnsafeCommand(command)) return;
+
             try
             {
                 if (command.StartsWith("shutdown"))
